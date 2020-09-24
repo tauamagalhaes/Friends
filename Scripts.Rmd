@@ -1,0 +1,752 @@
+---
+title: 'Análise da audiência das Temporadas de Friends'
+author: "Tauã Magalhães Vital"
+output:
+  html_document: default
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+A ideia deste script é analisar o que está por trás do sucesso da série Friends. Os dados estão disponíveis no Kaggle.
+
+### Estrutura do processo
+
+* Feature engineering: onde vamos tratar os dados;
+*  Análise exploratória: tentar extrair algumas análises descritivas dos dados;
+* Análise preditiva: tentar prever qual seria o resultado de uma nova temporada.
+
+
+## Feature engineering
+
+Primeiro vamos carregar os dados usando o pacote "readxl" visto que estes estão em formato ".xlsx".
+
+```{r}
+# Certifique-se de que o arquivo esteja neste diretorio
+setwd("/Users/tauamagalhaes/Documents/Interview_Globo")
+# Certifique-se ainda que as bibliotecas utilizadas estao previamente instaladas
+# install.package("readxl")
+library(readxl)
+data_friends <- read_excel("~/Documents/Interview_Globo/DESAFIO1_friends_episodes_aud.xlsx")
+```
+
+Carregado os dados, vamos ver como estes estão estruturados e como tratá-los.
+
+```{r}
+summary(data_friends)
+```
+
+```{r}
+head(data_friends, n = 10)
+```
+#### Text mining sinopse dos episódios
+
+Como podemos perceber diversas variáveis no dataset estão em formato de character, incluindo a data em que o episódio foi originalmente exibido. Vamos utilizar primeiro então uma análise exploratória de text mining da sinopse dos episódios para extrair alguma informação desta variável.
+
+```{r message = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1) 
+# Carregar o pacote "tm" para text mining
+# install.package("tm")
+library(tm)
+# Criando um obeto Corpus para a sinopse
+corpus_sinopse <- Corpus(VectorSource(data_friends$Sinopse_orig))
+# Removendo a pontuacao, numeros e transformando para letras minusculas
+corpus_sinopse <- tm_map(corpus_sinopse, content_transformer(tolower)) 
+corpus_sinopse <- tm_map(corpus_sinopse, removePunctuation) 
+corpus_sinopse <- tm_map(corpus_sinopse, removeNumbers)
+corpus_sinopse <- tm_map(corpus_sinopse , removeWords, stopwords("english"))
+```
+Agora que os dados foram tratados, removendo pontuação, números e stopwords, vamos criar uma matriz de termos e palavras mais frequentes.
+```{r message = FALSE}
+tdm_sinopse <- TermDocumentMatrix(corpus_sinopse, control = list(wordLengths = c(3, Inf)))
+# Palavras mais frequentes com no minimo 50 aparicoes
+freq_terms_50_sinopse <- findFreqTerms(tdm_sinopse, lowfreq = 50); freq_terms_50_sinopse
+```
+Como podemos perceber, se considerarmos uma frequência superios a 50, apenas os nomes dos personagens principais são relevantes. Assim diminuímos para 20 a frequência.
+```{r message = FALSE}
+freq_terms_20_sinopse <- findFreqTerms(tdm_sinopse, lowfreq = 20); freq_terms_20_sinopse
+```
+Para facilitar a visualização vamos fazer um  plot.
+```{r message = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1) 
+# Criando a matriz de termos frequentes
+term_freq_sinopse <- rowSums(as.matrix(tdm_sinopse))
+term_freq_sinopse <- subset(term_freq_sinopse, term_freq_sinopse >=20)
+df_term_freq_sinopse <- data.frame(term = names(term_freq_sinopse), freq <- term_freq_sinopse)
+
+# Carregando ggplot
+# install.package("ggplot2")
+library(ggplot2)
+
+ggplot(df_term_freq_sinopse, aes(x = term, y = freq)) + geom_bar(stat = "identity", fill = "blue", colour = "black") + xlab("Termos")+ ylab("Frequência") + coord_flip()
+```
+
+Vamos fazer uma nuvem de palavras para melhorar ainda mais a visualização.
+
+```{r message = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1) 
+# Carregando as bibliotecas necessárias
+library(wordcloud)
+library(RColorBrewer)
+# Transformando a matriz tdm para o formato matrix
+tdm_sinopse_Matrix = as.matrix(tdm_sinopse)
+
+word_freq_sinopse = sort(rowSums(tdm_sinopse_Matrix), decreasing = T)
+wordcloud(words = names(word_freq_sinopse), freq = word_freq_sinopse, min.freq = 10, random.order = F, colors = brewer.pal(8, "Dark2"))
+```
+
+Visto que os nomes dos personagens são as palavras mais frequentes na sinopse vamos criar cinco variáveis binárias (uma para cada personagem principal) que indica a presença daquela palavra na sinopse.
+
+```{r}
+# Criando um vetor de zeros para receber as variaves
+Vector_zeros <- matrix(c(rep(0,235)),235,1)
+# Criando as variaveis
+joey_sinopse <- as.data.frame(Vector_zeros)
+ross_sinopse <- as.data.frame(Vector_zeros)
+rachel_sinopse <- as.data.frame(Vector_zeros)
+monica_sinopse <- as.data.frame(Vector_zeros)
+phoebe_sinopse <- as.data.frame(Vector_zeros)
+chandler_sinopse <- as.data.frame(Vector_zeros)
+# Mergindo com o dataset original
+data_friends <- cbind(data_friends, joey_sinopse, ross_sinopse, rachel_sinopse, monica_sinopse, phoebe_sinopse, chandler_sinopse)
+
+# Loops para criar as variaveis
+for (i in 1:235){
+  if (grepl("Joey", data_friends$Sinopse_orig[i]) == TRUE){
+    data_friends$joey_sinopse[i] <- 1
+  }else
+    data_friends$joey_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if (grepl("Ross", data_friends$Sinopse_orig[i]) == TRUE){
+    data_friends$ross_sinopse[i] <- 1
+  }else
+    data_friends$ross_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if (grepl("Rachel", data_friends$Sinopse_orig[i]) == TRUE){
+    data_friends$rachel_sinopse[i] <- 1
+  }else
+    data_friends$rachel_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if (grepl("Monica", data_friends$Sinopse_orig[i]) == TRUE){
+    data_friends$monica_sinopse[i] <- 1
+  }else
+    data_friends$monica_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if (grepl("Phoebe", data_friends$Sinopse_orig[i]) == TRUE){
+    data_friends$phoebe_sinopse[i] <- 1
+  }else
+    data_friends$phoebe_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if (grepl("Chandler", data_friends$Sinopse_orig[i]) == TRUE){
+    data_friends$chandler_sinopse[i] <- 1
+  }else
+    data_friends$chandler_sinopse[i] <- 0
+}
+
+# Excluindo as variaveis "V1" criadas
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+```
+
+Visto que ainda assim podemos ter deixado alguma relação entre as palavras contidas nas sinopses de cada episódio nos escapar, utilizaremos uma análise de cluster para criar grupos de palavras baseadas nas distâncias que se encontram uma das outras e incluí-los na análise posterior. Para tal, aplicamos o método de cluster hierárquico com os termos mais frequentes no Corpus de sinopses. Em outras, faremos a análise de cluster apenas nos termos mais frequentes.
+
+```{r message = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1)
+# Definindo uma seed para reproducibilidade
+set.seed(123)
+# Utilizamos o termo sparse para retirar apenas as palavras mais frequentes
+tdm_sinopse <- as.matrix(removeSparseTerms(tdm_sinopse, sparse = 0.80))
+# Foi criado uma matriz de distância entre as palavras
+distMatrix_sinopse <- dist(scale(tdm_sinopse))
+# Utilizando um cluster hierarquico baseado no metodo de Ward
+fit_cluster <- hclust(distMatrix_sinopse, method = "ward.D")
+# Plotando o dendograma
+plot(fit_cluster)
+# Incluindo retangulos em torno dos agrupamentos
+result_cluster <- rect.hclust(fit_cluster, k = 3)
+```
+
+Pelo dendograma obtido como resultado do cluster hierárquico percebos três grupos de interações entre os nomes dos personagens "Monica Chandler", "Rachel Ross" e "Phoebe Joey". Assim, da mesma forma que foi feita anteriormente vamos criar variáveis binárias para a presença destes termos nas sinopses dos episódios.
+
+```{r message = FALSE}
+monica_chandler_sinopse <- as.data.frame(Vector_zeros)
+joey_phoebe_sinopse <- as.data.frame(Vector_zeros)
+rachel_ross_sinopse <- as.data.frame(Vector_zeros)
+data_friends <- cbind(data_friends, monica_chandler_sinopse, joey_phoebe_sinopse,
+                      rachel_ross_sinopse)
+
+for (i in 1:235){
+  if ((grepl("Joey", data_friends$Sinopse_orig[i]) == TRUE) &
+      (grepl("Phoebe", data_friends$Sinopse_orig[i]) == TRUE)){
+    data_friends$joey_phoebe_sinopse[i] <- 1
+  }else
+    data_friends$joey_phoebe_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if ((grepl("Rachel", data_friends$Sinopse_orig[i]) == TRUE) &
+      (grepl("Ross", data_friends$Sinopse_orig[i]) == TRUE)){
+    data_friends$rachel_ross_sinopse[i] <- 1
+  }else
+    data_friends$rachel_ross_sinopse[i] <- 0
+}
+
+for (i in 1:235){
+  if ((grepl("Monica", data_friends$Sinopse_orig[i]) == TRUE) &
+      (grepl("Chandler", data_friends$Sinopse_orig[i]) == TRUE)){
+    data_friends$monica_chandler_sinopse[i] <- 1
+  }else
+    data_friends$monica_chandler_sinopse[i] <- 0
+}
+
+# Excluindo as variaveis "V1" criadas
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+```
+
+#### Text mining dos diretores dos episódios
+
+Vamos fazer o mesmo processo agora para os diretores dos episódios
+
+
+```{r message = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1)
+# Criando o Corpus da variável Diretor
+corpus_diretor <- Corpus(VectorSource(data_friends$Diretor))
+# Removendo a pontuacao, numeros e transformando para letras minusculas
+corpus_diretor <- tm_map(corpus_diretor, content_transformer(tolower)) 
+corpus_diretor <- tm_map(corpus_diretor, removePunctuation) 
+corpus_diretor <- tm_map(corpus_diretor, removeNumbers)
+corpus_diretor <- tm_map(corpus_diretor, removeWords, stopwords("english"))
+# Criando a matriz de termos frequentes
+tdm_diretor <- TermDocumentMatrix(corpus_diretor, control = list(wordLengths = c(3, Inf)))
+# Palavras mais frequentes com no minimo 5 aparicoes
+freq_terms_5_diretor <- findFreqTerms(tdm_diretor, lowfreq = 5); freq_terms_5_diretor
+```
+
+```{r message = FALSE}
+term_freq_diretor <- rowSums(as.matrix(tdm_diretor))
+term_freq_diretor <- subset(term_freq_diretor, term_freq_diretor >=20)
+df_term_freq_diretor <- data.frame(term = names(term_freq_diretor), freq <- term_freq_diretor)
+
+ggplot(df_term_freq_diretor, aes(x = term, y = freq)) + geom_bar(stat = "identity", fill = "blue", colour = "black") + xlab("Termos")+ ylab("Frequência") + coord_flip()
+```
+
+Vamos fazer uma nuvem de palavras para melhorar ainda mais a visualização.
+
+```{r message = FALSE}
+# Transformando a matriz tdm para o formato matrix
+tdm_diretor = as.matrix(tdm_diretor)
+
+word_freq_diretor = sort(rowSums(tdm_diretor), decreasing = T)
+wordcloud(words = names(word_freq_diretor), freq = word_freq_diretor, min.freq = 10, random.order = F, colors = brewer.pal(8, "Dark2"))
+```
+
+Tanto pela nuvem de palavras como pelo gráfico de frequências temos que quatro nomes surgem com maior frequência "Halvorson", "Kevin", "Bright" e "Gary". Como já era de se esperar, visto que o nome na variável é composto do nome e sobrenome dos diretores, temos que as quatro palavras representam apenas dois diretores Gary Halvorson e Kevin Bright. Da mesma forma que feita para as palavras contidas na sinopse vamos criar variáveis dummy igual a um se algum dos dois diretores foi o responsável pelo episódio, e zero caso contrário. A hipótese a ser testada aqui será a de que se o sucesso da série pode ser atribuído aos diretores que foram responsáveis pelo maior número de episódios.
+
+
+```{r message = FALSE}
+principais_diretores <- as.data.frame(Vector_zeros)
+data_friends <- cbind(data_friends, principais_diretores)
+
+for (i in 1:235){
+  if ("Gary Halvorson" %in% data_friends$Diretor[i] |
+     "Kevin Bright" %in% data_friends$Diretor[i] ){
+    data_friends$principais_diretores[i] <- 1
+  }else
+    data_friends$principais_diretores[i] <- 0
+}
+
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+```
+
+#### Text miningo dos escritores
+
+Vamos fazer a mesma análise para a variável que representa os escritores do episódio. Aparentemente esta se encontra um pouco mais fora de padrão na linguagem, assim redobraremos a atenção nos detalhes.
+
+```{r message = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1)
+# Criando o Corpus da variável Diretor
+corpus_escritor <- Corpus(VectorSource(data_friends$Escrito_por))
+# Removendo a pontuacao, numeros e transformando para letras minusculas
+corpus_escritor <- tm_map(corpus_escritor, content_transformer(tolower)) 
+corpus_escritor <- tm_map(corpus_escritor, removePunctuation) 
+corpus_escritor <- tm_map(corpus_escritor, removeNumbers)
+corpus_escritor <- tm_map(corpus_escritor, removeWords, stopwords("english"))
+corpus_escritor <- tm_map(corpus_escritor, removeWords, stopwords("portuguese"))
+corpus_escritor <- tm_map(corpus_escritor, removeWords, c("história", "roteiro"))
+# Criando a matriz de termos frequentes
+tdm_escritor <- TermDocumentMatrix(corpus_escritor, control = list(wordLengths = c(3, Inf)))
+# Palavras mais frequentes com no minimo 10 aparicoes
+freq_terms_20_escritor <- findFreqTerms(tdm_escritor, lowfreq = 20); freq_terms_20_escritor
+```
+
+```{r message = FALSE}
+term_freq_escritor <- rowSums(as.matrix(tdm_escritor))
+term_freq_escritor <- subset(term_freq_escritor, term_freq_escritor >=20)
+df_term_freq_escritor <- data.frame(term = names(term_freq_escritor), freq <- term_freq_escritor)
+
+ggplot(df_term_freq_escritor, aes(x = term, y = freq)) + geom_bar(stat = "identity", fill = "blue", colour = "black") + xlab("Termos")+ ylab("Frequência") + coord_flip()
+```
+
+Vamos fazer uma nuvem de palavras para melhorar ainda mais a visualização.
+
+```{r message = FALSE}
+# Transformando a matriz tdm para o formato matrix
+tdm_escritor_Matrix = as.matrix(tdm_escritor)
+
+word_freq_escritor = sort(rowSums(tdm_escritor_Matrix), decreasing = T)
+wordcloud(words = names(word_freq_escritor), freq = word_freq_escritor, min.freq = 10, random.order = F, colors = brewer.pal(8, "Dark2"))
+```
+
+Percebemos que há 10 termos que aparecem com uma frequência superior a 20, vamos analisar agora a associação entre eles para verificar se são nomes e sobrenomes e também se escreveram os espisódios em conjunto.
+
+```{r message = FALSE}
+findAssocs(tdm_escritor, "david", 0.5)
+findAssocs(tdm_escritor, "kauffman", 0.5)
+findAssocs(tdm_escritor, "goldbergmeehan", 0.5)
+findAssocs(tdm_escritor, "shana", 0.5)
+findAssocs(tdm_escritor, "silveri", 0.5)
+findAssocs(tdm_escritor, "scott", 0.5)
+findAssocs(tdm_escritor, "andrew", 0.5)
+findAssocs(tdm_escritor, "cohen", 0.5)
+findAssocs(tdm_escritor, "reich", 0.5)
+findAssocs(tdm_escritor, "ted", 0.5)
+```
+
+Percebemos uma associação muito grande entre os termos "Marta Kauffman David Crane", "Shana Goldberg-Meehan", "Scott Silver", "Ted Cohen Andrew Reich". Como já suspeitávamos, alguns são nomes e sobrenomes. Ainda, em muitos episódios estes trabalhram em conjunto. Assim, vamos criar quatro variáveis binárias indicando se os respectivos escritores foram os responsáveis pelo episódio.
+
+```{r message = FALSE}
+kauffman_crane_escritor <- as.data.frame(Vector_zeros)
+shana_escritor <- as.data.frame(Vector_zeros)
+scott_escritor <- as.data.frame(Vector_zeros)
+cohen_reich_escritor <- as.data.frame(Vector_zeros)
+data_friends <- cbind(data_friends, kauffman_crane_escritor, shana_escritor, scott_escritor, cohen_reich_escritor)
+
+# Tomaremos um maior cuidado quanto a variacao de minusculas entre os termos
+
+for (i in 1:235){
+  if (
+    (grepl("Ted", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Cohen", data_friends$Escrito_por[i], ignore.case = TRUE)|
+    grepl("Andrew", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Reich", data_friends$Escrito_por[i], ignore.case = TRUE)) == TRUE){
+    data_friends$cohen_reich_escritor[i] <- 1
+  }else
+    data_friends$cohen_reich_escritor[i] <- 0
+}
+
+
+for (i in 1:235){
+  if (
+    (grepl("Scott", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Silver", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Scott Silver", data_friends$Escrito_por[i], ignore.case = TRUE)) == TRUE){
+      data_friends$scott_escritor[i] <- 1
+  }else
+    data_friends$scott_escritor[i] <- 0
+}
+
+for (i in 1:235){
+  if (
+    (grepl("Marta", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Kauffman", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("David", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Crane", data_friends$Escrito_por[i], ignore.case = TRUE)) == TRUE){
+    data_friends$kauffman_crane_escritor[i] <- 1
+  }else
+    data_friends$kauffman_crane_escritor[i] <- 0
+}
+
+for (i in 1:235){
+  if (
+    (grepl("Shana", data_friends$Escrito_por[i], ignore.case = TRUE) |
+    grepl("Goldberg", data_friends$Escrito_por[i], ignore.case = TRUE)|
+    grepl("Meehan", data_friends$Escrito_por[i], ignore.case = TRUE)|
+    grepl("Goldberg-Meehan", data_friends$Escrito_por[i], ignore.case = TRUE)|
+    grepl("Shana Goldberg-Meehan", data_friends$Escrito_por[i], ignore.case = TRUE)) == TRUE){
+    data_friends$shana_escritor[i] <- 1
+  }else
+    data_friends$shana_escritor[i] <- 0
+}
+
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+```
+
+#### Tratamento da data
+
+Vamos passar a análise das datas agora. Percebemos que esta se encontra em um formato de character e transformaremos para um formato de data.
+
+```{r}
+data_friends$Exibicao_orig[170] <- "20 de setembro de 2001"
+data_friends$Exibicao_orig[194] <- "19 de setembro de 2002"
+# Extraindo o dia
+data_friends$dia <- strtrim(data_friends$Exibicao_orig, 2)
+
+# Extraindo o mes
+mes <- as.data.frame(Vector_zeros)
+data_friends <- cbind(data_friends, mes)
+
+
+for (i in  1:235){
+  if (grepl("janeiro", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "01"
+  } else { if (grepl("fevereiro", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "02"
+  } else { if (grepl("março", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "03"
+  } else { if (grepl("abril", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "04"
+  } else{ if (grepl("maio", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "05"
+  } else{ if (grepl("junho", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "06"
+  } else{ if (grepl("julho", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "07"
+  } else{ if (grepl("agosto", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "08"
+  } else{ if (grepl("setembro", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "09"
+  } else{ if (grepl("outubro", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "10"
+  } else{ if (grepl("novembro", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "11"
+  } else{  if (grepl("dezembro", data_friends$Exibicao_orig[i]) == TRUE){
+    data_friends$mes[i] <- "12" }
+  }
+  }
+  }
+  }
+  }
+  }
+  }
+  }
+  }
+  }
+  }
+}
+
+# Criando uma funcao para extrair os ultimos quatro digitos referentes ao ano
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+
+# Extraindo o ano
+data_friends$ano <- substrRight(data_friends$Exibicao_orig, 4)
+
+# Excluindo as variaveis V1 criadas
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+
+# Exluindo os espacos e agregando em uma unica data
+data_friends$data_exibicao <- paste(data_friends$dia, data_friends$mes, data_friends$ano, sep = "-")
+searchString <- ' '
+replacementString <- ''
+data_friends$data_exibicao <- sub(searchString, replacementString, data_friends$data_exibicao)
+# Transformando em um formato de data
+data_friends$data_exibicao <- as.Date(data_friends$data_exibicao, "%d-%m-%Y")
+```
+
+#### Dummy de período escolar
+
+Um fato que pode impactar a audiência dos episódios é o fato de este ter sido exibido originalmente em um período de férias escolar. Assim criaremos uma variável binária igual a um se o episódio foi exibido originalmente em algum dos meses: julho, dezembro ou janeiro.
+
+```{r}
+# Criando um vetor para receber os valores
+ferias <- as.data.frame(Vector_zeros)
+# Incluindo este na base de dados
+data_friends <- cbind(data_friends, ferias)
+
+# Criando a variavel usando um loop
+for (i in 1:235){
+  if (
+    ("07" %in% data_friends$mes[i] | "12" %in% data_friends$mes[i] | "01" %in% data_friends$mes[i])){
+    data_friends$ferias[i] <- 1
+  }else
+    data_friends$ferias[i] <- 0
+}
+# Excluindo as variavel V1 criada
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+```
+
+#### Dummy duração superior a média
+
+Visto que a maioria dos espisodios que foram exibidos possuem 22 minutos de duracao, vamos criar uma variável binária igual a um para episódios mais longos que a média para avaliar se estes possuem um maior sucesso com o público.
+
+```{r}
+duracao_superior <- as.data.frame(Vector_zeros)
+data_friends <- cbind(data_friends, duracao_superior)
+
+for (i in 1:235){
+  if (data_friends$Duracao[i] > 22){
+    data_friends$duracao_superior[i] <- 1
+  }else
+    data_friends$duracao_superior[i] <- 0
+}
+
+data_friends <- data_friends[ , !(colnames(data_friends) %in% "V1")]
+```
+
+## Análise exploratória
+
+#### Audiência
+
+Após todo esse tratamento vamos de fato começar a análise dos dados agora. Primeiro, vamos olhar algumas tendências ao longo do tempo. Começando pelo audiência dos episódios.
+
+```{r}
+# Ha dois missing values na variavel de audienica, vamos subsitui-los pelo valor medio
+data_friends$Audiencia[170] <- 25.19
+data_friends$Audiencia[194] <- 25.19
+# Ha um outlier provavelmente devido a um erro de digitacao na linha 212, vamos corrigi-lo
+data_friends$Audiencia[212] <- 20.79
+# Transformando a audiencia em uma serie de tempo
+audiencia_ts <- ts(as.numeric(data_friends$Audiencia), frequency = 24)
+# Plotando a serie de tempo
+plot.ts(audiencia_ts, xlab = "Temporada", ylab = "Audiência do episódio")
+```
+
+Pela análise visual a série de tempo da audiência apresenta um comportamento que chamamos de estacionário (esta hipótese será formalmente testada posteriormente através do teste de aumentado de Dickey-Fuller). Ainda, aparentemente temos dois valores outliers na audiência (valores muito acima da média), sendo o último episódio da segunda temporada e o último episódio da série.
+
+#### Estrelas
+
+A variável de estrelas IMDb se refere a nota média que os usuários deram a determinado episódio. Vamos ver como esta se comportou ao longo de todas as temporadas.
+
+```{r}
+# Transformando a audiencia em uma serie de tempo
+estrelas_ts <- ts(as.numeric(data_friends$Estrelas_IMDB), frequency = 24)
+# Plotando a serie de tempo
+plot.ts(estrelas_ts, xlab = "Temporada", ylab = "Estrelas IMDb")
+```
+
+Esta também apresenta um comportamento estacionário. Há alguns possíveis outliers, no entanto, visto que o desvio padrão das estrelas é bem baixo (0,4) e a média 8,4, valores próximos a 7,5 não necessariamente precisam ser rotulados como outlier.
+
+#### Votos
+
+Esta variável representa o número de usuários que forneceram um ranking de estrelas. Talvez ambas as variáveis estejam muito correlacionadas (veremos a correlação das variáveis a seguir).
+
+```{r}
+# Transformando a audiencia em uma serie de tempo
+voto_ts <- ts(as.numeric(data_friends$Votos_IMDB), frequency = 24)
+# Plotando a serie de tempo
+plot.ts(voto_ts, xlab = "Temporada", ylab = "Votos IMDb")
+```
+
+Percebemos um comportamento decrescente no número de votos ao longo das temporadas, sendo que o último episódio claramente é um outlier. 
+
+#### Correlação entre as variáveis
+
+Vamos analisar a correlação entre as variáveis audiência, estrelas e número de votos.
+
+```{r warning = FALSE}
+# Omitindo alguns warnings
+defaultW <- getOption("warn")
+options(warn = -1) 
+# Definindo as variaveis que queremos analisar
+corr_matrix <- data_friends[c("Audiencia", "Estrelas_IMDB", "Votos_IMDB")]
+cor(corr_matrix)
+# Utilizando o pacote car para plotar as correlacoes
+library(car)
+# Plot das correlacoes
+spm(corr_matrix)     
+
+```
+
+O número de votos e o rating do episódio possui uma correlação igual a 0,55 (nada alarmante em termos de multicolinearidade perfeita). Ao analisar o plot proveniente do pacote car temos na diagonal principal o histograma das variáveis suavizados por uma linha. As correlações são apresentadas como diagramas de dispersão entre as variáveis. Por uma análise visual percebe-se que talvez um modelo linear para previsão não seja uma má ideia.
+
+# Análise preditiva
+
+Vamos tentar agora prever qual seria o sucesso de uma nova temporada de Friends. Algumas hipótese que assumiremos:
+
+* O comportamento dos usuários que assistiam a série não se modificou desde que a série exibiu seu último episódio.
+* A variável audiência será utilizada como medida de sucessso do episódio.
+* Vamos dividir a nossa amostra em duas partes: treino e teste. Utilizaremos como conjunto de treino dos modelos as temporadas de 1 a 9, e como conjunto de teste a temporada 10.
+
+```{r}
+# Fazendo um subselect das variaveis que entraram no modelo
+data_pred <- data_friends[9:31]
+data_pred <- data_pred[-c(18:21)]
+# Dividindo um conjunto em treino e teste
+data_train <- data_pred[1:217,]
+data_test <- data_pred[218:235,]
+```
+
+#### Modelo de regressão linear múltipla
+
+Vamos começar nossa análise utilizando um modelo linear simples.
+
+```{r}
+linear_model <- lm(Audiencia ~., data = data_train)
+```
+
+Avaliando o desempenho do modelo no conjunto de teste.
+
+```{r}
+predict_linear_model <- predict(linear_model, newdata = data_test)
+# Vamos utilizar como métrica de avaliação o RMSE
+rmse_linear_model <- sqrt(mean((predict_linear_model - data_test$Audiencia)^2)); rmse_linear_model
+```
+
+Vamos utilizar como métrica de avaliação dos modelos a raiz quadrada do erro quadrático médio de previsão (RMSE). Para o modelo linear simples ajustado chegamos a um RMSE = 6,029 no conjunto de testes.
+
+#### LASSO
+
+```{r}
+# Carregando o pacote glmnet para ridge e lasso regression
+# install.package("glmnet)
+library(glmnet)
+# Definindo features e outcome nos conjuntos de treino e teste
+y_train <- as.matrix(data_train$Audiencia)
+x_train <- as.matrix(data_train[2:19])
+y_test <- as.matrix(data_test$Audiencia)
+x_test <- as.matrix(data_test[2:19])
+# Definindo um grid de lambdas
+grid = 10^seq(10, -2, length = 100)
+# Regressao LASSO
+lasso = glmnet(x_train, y_train, alpha = 1, standardize = TRUE, lambda = grid)
+predict_lasso <- predict(lasso, newx = x_test)
+# RMSE
+rmse_lasso <- sqrt(mean((predict_lasso - data_test$Audiencia)^2)); rmse_lasso
+```
+
+Aparentemente incluindo uma penalidade do tipo l1 no modelo de regressão linear, ou seja, fazendo uma regressão do tipo LASSO, temos um aumento do RMSE no conjunto de teste.
+
+Vamos tentar fazer uma ridge regression para tentar melhorar o ajuste do modelo. Ao contrário do método LASSO, a ridge regression utiliza uma penalidade do tipo l2 em que os coeficientes irrelevantes não são encolhidos a zero, apenas sofrem uma penalidade.
+
+#### Ridge regression
+
+```{r}
+# Ridge Regression
+ridge = glmnet(x_train, y_train, alpha = 0, standardize = TRUE, lambda = grid)
+predict_ridge <- predict(ridge, newx = x_test)
+# RMSE
+rmse_ridge <- sqrt(mean((predict_ridge - data_test$Audiencia)^2)); rmse_ridge
+```
+
+Chegamos a um RMSE igual a 6,86, o qual foi inferior ao do LASSO porém ainda superior ao método de regressão linear simples.
+
+Vamos tentar utilizar um método não linear agora e ver como os dados se ajustam.
+
+#### Random Forest
+```{r message=FALSE}
+# Vamos carregar o pacote randomForest
+# install.package("randomForest")
+library(randomForest)
+rf <- randomForest(Audiencia ~., data = data_train, mtry = 4,
+                          importance = TRUE)
+predict_rf <- predict(rf, newdata = data_test)
+rmse_rf <- sqrt(mean((predict_rf - data_test$Audiencia)^2)); rmse_rf
+```
+
+Temos ainda um RMSE superio ao modelo de regressão linear simples. Vamos tentar o método de bagging. A diferença deste último em relação ao método de Random Forest consiste em utilizar todos os possíveis features nos splits das árvores, enquanto que o Random Forest utiliza em média a raiz quadrada do número possível de preditores.
+
+#### Bagging
+
+```{r message=FALSE}
+bagging <- randomForest(Audiencia ~., data = data_train, mtry = 18,
+                          importance = TRUE)
+predict_bag <- predict(bagging, newdata = data_test)
+rmse_bag <- sqrt(mean((predict_bag - data_test$Audiencia)^2)); rmse_bag
+```
+
+Ainda temos um RMSE superio ao método de regressão linear simples.
+
+#### ARIMA
+
+Vamos tentar utilizar o fato da audiência ser uma série temporal e utilizar um modelo univariado ARIMA para prever a audiência. Para isso, primeiro devemos testar se a série é estacionária. Vamos utilizar o teste de ADF.
+
+```{r message=FALSE}
+# Primeiro temos que definir os periodos de teste e treino
+y_train <- ts(y_train, freq = 24)
+y_test <- ts(y_test, freq = 24)
+#ACF e PACF correlations
+acf(y_train, lag.max = 36, drop.lag.0 = T)
+pacf(y_train, lag.max = 36)
+# Carregando a biblioteca
+library(tseries)
+# Teste de raiz unitaria
+adf.test(y_train)
+```
+
+Pelo teste ADF rejeitamos a hipótese nula de que a série possui uma raiz unitário, e portanto, a mesma é estacionária. O que significa que não precisamos fazer a diferenciação da mesma antes das estimativas.
+
+```{r message=FALSE}
+# Carregar o pacote forecast
+library(forecast)
+# Vamos utilizar a funcao auto.arima para encontrar o melhor modelo
+arima <- auto.arima(y_train, max.p=5, max.q=5, max.P=5, max.Q = 5, test = c("adf"),
+                             ic = c("aicc", "aic", "bic"),trace = TRUE, 
+                             stepwise = FALSE, approx = FALSE, lambda = "auto")
+predict_arima <- forecast(arima, h = 18)
+rmse_arima <- sqrt(mean((predict_arima$mean - data_test$Audiencia)^2)); rmse_arima
+```
+
+#### Rede Neural
+
+Vamos tentar utilizar a proposta de rede neural de Rob Hyndman para séries temporais univariadas. Esta consiste de uma rede neural feed-forward com apenas uma cada de neurônios oculta. Os valores de y defasados temporalmente são utilizados como inputs da rede neural. As redes neurais serão treinadas 20 vezes com diferentes valores iniciais de pesos, sendo que estes são definidos de forma aleatória. Após o processo de treino, é feita a média dos pesos e o forecast é feito.
+
+```{r message=FALSE}
+nn <- nnetar(y_train)
+predict_nn <- forecast(nn, h = 18, PI = FALSE)
+rmse_nn <- sqrt(mean((predict_nn$mean - data_test$Audiencia)^2)); rmse_nn
+```
+
+Temos que em ambos os métodos de séries de tempo empregado o RMSE foi superior ao modelo de regressão linear simples.
+
+```{r message=FALSE}
+summary(predict_linear_model)
+sd(predict_linear_model)
+```
+
+Pelos resultados que obtivemos, uma nova temporada de Friends teria uma audiência média de 25,31 superior a média de todas as temporadas que era igual a 25,19. Esta média teria um desvio padrão de 1,81, menos que a metade do desvio padrão de todas as temporadas (4,88). Em outras palavras, além de uma nova temporada apresentar uma média de audiência superior as temporadas anteriores, esta apresentaria uma variância menor de audiência entre os episódios.
+
+Ressalta-se que este resultado é limitado as hipóteses de que não haveria mudança no perfil do usuário e de que a qualidade dos episódios seria a mesma das temporadas anteriores.
+
+#### Quais os fatores levaram ao tamanho sucesso da série?
+
+Vamos responder essa pergunta utilizando todo o conjunto de dados e ainda o método de Minímos Quadrados Ordinários para regressão linear múltipla, que conforme vimos apresentou o menos RMSE no conjunto de testes dentre os métodos utilizados.
+
+```{r message=FALSE}
+lm_friends <- lm(Audiencia ~., data = data_pred)
+summary(lm_friends)
+```
+ 
+Pelos resultados percebemos que a níveis convencionais de significância apenas 3 variáveis importam para explicar a audiência: o número de votos IMDb, os principais diretores e o fato do episódio ser exibido originalmente em período de férias escolares.
+
+Ressalta-se que a variável de principais diretores impactou negativamene a audiência, assim, diretores alternativos parecem ter um efeito maio na audiência. Exibir o episódio originalmente em períodos de férias escolar apresenta um efeito positivo na audiência, talvez o mesmo valha para períodos de quarentena.
+
+Um maior número de votos no episódio também apresenta um efeito positivo na audiência. Acredito que esta variável deve ser interpretada com cautela, pois a mesma pode sofrer de causalidade reversa, visto que o voto é feito após o episódio ser assistido. Em outras palavras, esta variável pode ser endógena ao modelo, invalidando asssim a sua significância estatística, bem como tornando nossas estimativas enviesadas. O mesmo pode ser dito das demais variável estrelas. Porém, na falta de uma variável instrumental para ambas seguimos com nossas estimativas. A hipótese aqui é então de que um viés de variável relevante omitida seja pior que um viés por endogeneidade.
+
+Os nomes presentes na sinopse não tiveram um impacto estatisticamente significativo a níveis convencionais na audiência, bem como os escritores responsáveis pelo episódio não tiveram. Isto pode ser um indicativo de que os fãs da série gostam de todos os personagens em conjunto, visto que o nome de personagens isolados na sinopse não impactam a audiência. Essa hipótese pode ser corroborada pelo insucesso que a série com o único personagem Joey obteve.
+
+A série obteve uma tendência que pode-se dizer constante ao longo das temporadas, bem como um rating elevado ao longo das mesmas.
+
+# Quais variáveis poderiam melhorar nossos resultados?
+
+Acredito que quanto mais dados possuímos melhores nossas análises. Alguns que julgo poderem contribuir em muito quanto a determinar o sucesso de uma nova temporada e corroborar com nossos resultados até agora seriam:
+
+* Dados sobre o perfil dos usuários, por exemplo: idade, profissão e qual o perfil de seriado os mesmo preferem;
+* Horário que os usuários assistem aos episódios;
+* Dados mais detalhados sobre a audiência, por exemplo dados espaciais (por região, município ou até mesmo bairro) e dados temporais (como a audiência de um mesmo episódio variou ao longo do tempo).
+
+Enfim, esta não é uma lista exaustiva de variáveis relevantes, porém julgo que enriqueceriam nossa análise.
